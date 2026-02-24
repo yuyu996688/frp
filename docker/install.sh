@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 # frp Docker 交互式安装/管理脚本（服务端 frps / 客户端 frpc）
+# 按当前系统架构自动选择 latest-arm64 / latest-amd64 拉取并运行，无需环境变量与本地构建。
 # 用法: ./install.sh
 
 set -e
 
-FRP_IMAGE_TAG="${FRP_IMAGE_TAG:-v0.67.0}"
-FRPS_IMAGE="yuyu8868/frps:${FRP_IMAGE_TAG}"
-FRPC_IMAGE="yuyu8868/frpc:${FRP_IMAGE_TAG}"
+# 按当前系统自动选择 tag（不使用版本号）
+detect_frp_tag() {
+  local arch
+  arch="$(uname -m)"
+  case "$arch" in
+    x86_64)   echo "latest-amd64" ;;
+    aarch64|arm64) echo "latest-arm64" ;;
+    *) echo "latest-amd64" ;; # 未知时默认 amd64
+  esac
+}
+
+FRP_IMAGE_TAG="$(detect_frp_tag)"
+IMAGE_NAMESPACE="${IMAGE_NAMESPACE:-yuyu8868}"
+FRPS_IMAGE="$IMAGE_NAMESPACE/frps:${FRP_IMAGE_TAG}"
+FRPC_IMAGE="$IMAGE_NAMESPACE/frpc:${FRP_IMAGE_TAG}"
 FRPS_CONTAINER_NAME="${FRPS_CONTAINER_NAME:-frps}"
 FRPC_CONTAINER_NAME="${FRPC_CONTAINER_NAME:-frpc}"
 STATE_FILE=".frp-docker-state"
@@ -27,6 +40,13 @@ SCRIPT_DIR=""
 if [[ -n "${BASH_SOURCE[0]}" ]] && [[ -f "${BASH_SOURCE[0]}" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
+
+# 拉取镜像（不本地构建）
+ensure_image() {
+  local image="$1"
+  echo "拉取镜像: $image"
+  docker pull "$image"
+}
 
 # 读取输入，支持默认值
 read_default() {
@@ -147,8 +167,7 @@ do_install() {
   if [[ "$mode" == "server" ]]; then
     interactive_frps_config "$dir"
     echo ""
-    echo "拉取镜像: $FRPS_IMAGE"
-    docker pull "$FRPS_IMAGE"
+    ensure_image "$FRPS_IMAGE" frps
     docker stop "$FRPS_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPS_CONTAINER_NAME" 2>/dev/null || true
 
@@ -170,8 +189,7 @@ do_install() {
   else
     interactive_frpc_config "$dir"
     echo ""
-    echo "拉取镜像: $FRPC_IMAGE"
-    docker pull "$FRPC_IMAGE"
+    ensure_image "$FRPC_IMAGE" frpc
     docker stop "$FRPC_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPC_CONTAINER_NAME" 2>/dev/null || true
 
