@@ -42,3 +42,9 @@ client.key
 
 # AI
 CLAUDE.md
+
+docker/*.yml
+docker/*.toml
+docker/*.md
+docker/.frp-docker-state
+
