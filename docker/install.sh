@@ -177,8 +177,9 @@ do_install() {
     docker run -d \
       --name "$FRPS_CONTAINER_NAME" \
       --restart always \
-      -p "${bind_port}:${bind_port}" \
-      -p "${web_port}:${web_port}" \
+      --network host \
+#      -p "${bind_port}:${bind_port}" \
+#      -p "${web_port}:${web_port}" \
       -v "$dir/frps.docker.toml:/etc/frp/frps.toml:ro" \
       -e TZ=Asia/Shanghai \
       "$FRPS_IMAGE" -c /etc/frp/frps.toml
@@ -200,7 +201,7 @@ do_install() {
       --name "$FRPC_CONTAINER_NAME" \
       --restart always \
       -p "${web_port}:${web_port}" \
-      -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml:ro" \
+      -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml" \
       -e TZ=Asia/Shanghai \
       "$FRPC_IMAGE" -c /etc/frp/frpc.toml
     echo ""
@@ -277,6 +278,60 @@ do_restart() {
   echo "已重启: $cname"
 }
 
+# ---------- 更新（拉取最新镜像并用现有配置重建容器）---------
+do_update() {
+  local mode="$1"
+  local dir="$2"
+  dir="$(cd "$dir" && pwd)"
+
+  if [[ "$mode" == "server" ]]; then
+    if [[ ! -f "$dir/frps.docker.toml" ]]; then
+      echo "错误: 未找到配置 $dir/frps.docker.toml，请先执行安装。" >&2
+      exit 1
+    fi
+    ensure_image "$FRPS_IMAGE" frps
+    docker stop "$FRPS_CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$FRPS_CONTAINER_NAME" 2>/dev/null || true
+
+    local bind_port=7000 web_port=7500
+    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
+
+    docker run -d \
+      --name "$FRPS_CONTAINER_NAME" \
+      --restart always \
+      -p "${bind_port}:${bind_port}" \
+      -p "${web_port}:${web_port}" \
+      -v "$dir/frps.docker.toml:/etc/frp/frps.toml:ro" \
+      -e TZ=Asia/Shanghai \
+      "$FRPS_IMAGE" -c /etc/frp/frps.toml
+    echo ""
+    echo "frps 已更新并启动。"
+    echo "  配置: $dir/frps.docker.toml"
+  else
+    if [[ ! -f "$dir/frpc.docker.toml" ]]; then
+      echo "错误: 未找到配置 $dir/frpc.docker.toml，请先执行安装。" >&2
+      exit 1
+    fi
+    ensure_image "$FRPC_IMAGE" frpc
+    docker stop "$FRPC_CONTAINER_NAME" 2>/dev/null || true
+    docker rm "$FRPC_CONTAINER_NAME" 2>/dev/null || true
+
+    local web_port=7400
+    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
+
+    docker run -d \
+      --name "$FRPC_CONTAINER_NAME" \
+      --restart always \
+      -p "${web_port}:${web_port}" \
+      -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml:ro" \
+      -e TZ=Asia/Shanghai \
+      "$FRPC_IMAGE" -c /etc/frp/frpc.toml
+    echo ""
+    echo "frpc 已更新并启动。"
+    echo "  配置: $dir/frpc.docker.toml"
+  fi
+}
+
 # ---------- 解析已有安装目录的端口（用于启动/停止/重启时无需 state）----------
 # 服务端从 frps.docker.toml 读 bindPort、webServer.port；客户端读 webServer.port
 # 当前 启动/停止/重启 不依赖端口映射，容器已存在即可，所以这里不解析也可以。
@@ -324,6 +379,7 @@ main_menu() {
   echo "  3) 启动"
   echo "  4) 停止"
   echo "  5) 重启"
+  echo "  6) 更新（拉取最新镜像并用现有配置重建容器）"
   echo "  0) 返回/退出"
   echo ""
   local action
@@ -335,6 +391,7 @@ main_menu() {
     3) do_start "$mode" "$dir" ;;
     4) do_stop "$mode" "$dir" ;;
     5) do_restart "$mode" "$dir" ;;
+    6) do_update "$mode" "$dir" ;;
     0) echo "再见。"; exit 0 ;;
     *) echo "无效选择。"; exit 1 ;;
   esac

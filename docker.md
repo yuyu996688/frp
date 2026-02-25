@@ -15,12 +15,15 @@
 - 当前系统对应平台会执行 **load + push**，另一平台只 **push**。
 - 自定义镜像前缀可设置：`IMAGE_NAMESPACE=你的仓库 ./docker/build.sh`
 
-## 安装（自动按架构选 tag）
+## 安装与更新（自动按架构选 tag）
 
 `docker/install.sh` 会根据当前系统自动选择 tag，仅拉取对应镜像，无需环境变量与本地打包：
 
 - **x86_64** → 使用 `yuyu8868/frps:latest-amd64`、`yuyu8868/frpc:latest-amd64`
 - **arm64 / aarch64** → 使用 `yuyu8868/frps:latest-arm64`、`yuyu8868/frpc:latest-arm64`
+
+交互菜单提供：**安装**、**卸载**、**启动**、**停止**、**重启**、**更新**。  
+选 **更新** 会拉取当前架构的最新镜像，用现有配置重建容器（不重新生成配置）。
 
 ```shell
 ./docker/install.sh
