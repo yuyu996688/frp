@@ -178,8 +178,6 @@ do_install() {
       --name "$FRPS_CONTAINER_NAME" \
       --restart always \
       --network host \
-#      -p "${bind_port}:${bind_port}" \
-#      -p "${web_port}:${web_port}" \
       -v "$dir/frps.docker.toml:/etc/frp/frps.toml:ro" \
       -e TZ=Asia/Shanghai \
       "$FRPS_IMAGE" -c /etc/frp/frps.toml
