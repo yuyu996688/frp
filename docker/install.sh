@@ -41,7 +41,7 @@ if [[ -n "${BASH_SOURCE[0]}" ]] && [[ -f "${BASH_SOURCE[0]}" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 
-# 拉取镜像（不本地构建）
+# 拉取最新镜像
 ensure_image() {
   local image="$1"
   echo "拉取镜像: $image"
@@ -158,6 +158,40 @@ EOF
   echo "web_port=$web_port" > "$dir/$STATE_FILE"
 }
 
+# ---------- 公共：启动 frps 容器（host 网络，配置已存在）----------
+run_frps_container() {
+  local dir="$1"
+  local web_port=7500
+  [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
+
+  docker run -d \
+    --name "$FRPS_CONTAINER_NAME" \
+    --restart always \
+    --network host \
+    -v "$dir/frps.docker.toml:/etc/frp/frps.toml" \
+    -e TZ=Asia/Shanghai \
+    "$FRPS_IMAGE" -c /etc/frp/frps.toml
+  echo "  控制台: http://<本机IP>:${web_port}"
+  echo "  配置: $dir/frps.docker.toml"
+}
+
+# ---------- 公共：启动 frpc 容器----------
+run_frpc_container() {
+  local dir="$1"
+  local web_port=7400
+  [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
+
+  docker run -d \
+    --name "$FRPC_CONTAINER_NAME" \
+    --restart always \
+    -p "${web_port}:${web_port}" \
+    -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml" \
+    -e TZ=Asia/Shanghai \
+    "$FRPC_IMAGE" -c /etc/frp/frpc.toml
+  echo "  控制台: http://<本机IP>:${web_port}"
+  echo "  配置: $dir/frpc.docker.toml"
+}
+
 # ---------- 安装 ----------
 do_install() {
   local mode="$1"
@@ -167,45 +201,21 @@ do_install() {
   if [[ "$mode" == "server" ]]; then
     interactive_frps_config "$dir"
     echo ""
-    ensure_image "$FRPS_IMAGE" frps
+    ensure_image "$FRPS_IMAGE"
     docker stop "$FRPS_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPS_CONTAINER_NAME" 2>/dev/null || true
-
-    local bind_port=7000 web_port=7500
-    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
-
-    docker run -d \
-      --name "$FRPS_CONTAINER_NAME" \
-      --restart always \
-      --network host \
-      -v "$dir/frps.docker.toml:/etc/frp/frps.toml:ro" \
-      -e TZ=Asia/Shanghai \
-      "$FRPS_IMAGE" -c /etc/frp/frps.toml
+    run_frps_container "$dir"
     echo ""
     echo "frps 已安装并启动。"
-    echo "  控制台: http://<本机IP>:${web_port}"
-    echo "  配置: $dir/frps.docker.toml"
   else
     interactive_frpc_config "$dir"
     echo ""
-    ensure_image "$FRPC_IMAGE" frpc
+    ensure_image "$FRPC_IMAGE"
     docker stop "$FRPC_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPC_CONTAINER_NAME" 2>/dev/null || true
-
-    local web_port=7400
-    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
-
-    docker run -d \
-      --name "$FRPC_CONTAINER_NAME" \
-      --restart always \
-      -p "${web_port}:${web_port}" \
-      -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml" \
-      -e TZ=Asia/Shanghai \
-      "$FRPC_IMAGE" -c /etc/frp/frpc.toml
+    run_frpc_container "$dir"
     echo ""
     echo "frpc 已安装并启动。"
-    echo "  控制台: http://<本机IP>:${web_port}"
-    echo "  配置: $dir/frpc.docker.toml"
   fi
 }
 
@@ -287,46 +297,23 @@ do_update() {
       echo "错误: 未找到配置 $dir/frps.docker.toml，请先执行安装。" >&2
       exit 1
     fi
-    ensure_image "$FRPS_IMAGE" frps
+    ensure_image "$FRPS_IMAGE"
     docker stop "$FRPS_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPS_CONTAINER_NAME" 2>/dev/null || true
-
-    local bind_port=7000 web_port=7500
-    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
-
-    docker run -d \
-      --name "$FRPS_CONTAINER_NAME" \
-      --restart always \
-      -p "${bind_port}:${bind_port}" \
-      -p "${web_port}:${web_port}" \
-      -v "$dir/frps.docker.toml:/etc/frp/frps.toml:ro" \
-      -e TZ=Asia/Shanghai \
-      "$FRPS_IMAGE" -c /etc/frp/frps.toml
+    run_frps_container "$dir"
     echo ""
     echo "frps 已更新并启动。"
-    echo "  配置: $dir/frps.docker.toml"
   else
     if [[ ! -f "$dir/frpc.docker.toml" ]]; then
       echo "错误: 未找到配置 $dir/frpc.docker.toml，请先执行安装。" >&2
       exit 1
     fi
-    ensure_image "$FRPC_IMAGE" frpc
+    ensure_image "$FRPC_IMAGE"
     docker stop "$FRPC_CONTAINER_NAME" 2>/dev/null || true
     docker rm "$FRPC_CONTAINER_NAME" 2>/dev/null || true
-
-    local web_port=7400
-    [[ -f "$dir/$STATE_FILE" ]] && source "$dir/$STATE_FILE" 2>/dev/null || true
-
-    docker run -d \
-      --name "$FRPC_CONTAINER_NAME" \
-      --restart always \
-      -p "${web_port}:${web_port}" \
-      -v "$dir/frpc.docker.toml:/etc/frp/frpc.toml:ro" \
-      -e TZ=Asia/Shanghai \
-      "$FRPC_IMAGE" -c /etc/frp/frpc.toml
+    run_frpc_container "$dir"
     echo ""
     echo "frpc 已更新并启动。"
-    echo "  配置: $dir/frpc.docker.toml"
   fi
 }
 
